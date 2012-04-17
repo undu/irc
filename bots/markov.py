@@ -5,7 +5,7 @@ import random
 import re
 import sys
 
-from irc import IRCBot, IRCConnection
+from irc import IRCBot
 
 
 class MarkovBot(IRCBot):
@@ -20,12 +20,12 @@ class MarkovBot(IRCBot):
     chain_length = 2
     stop_word = '\n'
     filename = 'markov.db'
-    last = None 
-    
+    last = None
+
     def __init__(self, *args, **kwargs):
         super(MarkovBot, self).__init__(*args, **kwargs)
         self.load_data()
-    
+
     def load_data(self):
         if os.path.exists(self.filename):
             fh = open(self.filename, 'rb')
@@ -33,8 +33,8 @@ class MarkovBot(IRCBot):
             fh.close()
         else:
             self.word_table = {}
-    
-    def save_data(self):
+
+    def _save_data(self):
         fh = open(self.filename, 'w')
         fh.write(pickle.dumps(self.word_table))
         fh.close()
@@ -70,7 +70,7 @@ class MarkovBot(IRCBot):
 
             if len(gen_words) > len(message):
                 message = list(gen_words)
-        
+
         return ' '.join(message)
 
     def imitate(self, sender, message, channel):
@@ -81,7 +81,7 @@ class MarkovBot(IRCBot):
     def cite(self, sender, message, channel):
         if self.last:
             return self.last
-    
+
     def sanitize_message(self, message):
         """Convert to lower-case and strip out all quotation marks"""
         return re.sub('[\"\']', '', message.lower())
@@ -89,7 +89,7 @@ class MarkovBot(IRCBot):
     def log(self, sender, message, channel):
         sender = sender[:10]
         self.word_table.setdefault(sender, {})
-        
+
         if message.startswith('/'):
             return
 
@@ -99,7 +99,7 @@ class MarkovBot(IRCBot):
             say_something = False
         messages = []
         seed_key = None
-        
+
         if self.is_ping(message):
             message = self.fix_ping(message)
 
@@ -118,11 +118,10 @@ class MarkovBot(IRCBot):
                         generated = self.generate_message(person, seed_key=key)
                         if generated:
                             messages.append((person, generated))
-        
+
         if len(messages):
             self.last, message = random.choice(messages)
             return message
-
 
     def load_log_file(self, filename):
         fh = open(filename, 'r')
@@ -137,7 +136,7 @@ class MarkovBot(IRCBot):
         fh = open(filename, 'r')
         for line in fh.readlines():
             self.log(sender, line, '', False, None)
-    
+
     def command_patterns(self):
         return (
             self.ping('^imitate \S+', self.imitate),
@@ -145,25 +144,20 @@ class MarkovBot(IRCBot):
             ('.*', self.log),
         )
 
+    def exit_cleanup(self):
+        self._save_data()
+
 
 host = 'irc.freenode.net'
 port = 6667
 nick = 'whatyousay'
 
-conn = IRCConnection(host, port, nick)
-markov_bot = MarkovBot(conn)
+tolstoy = MarkovBot(host, port, nick)
 
 if len(sys.argv) > 1 and sys.argv[1] == '-log':
     if len(sys.argv) == 3:
-        markov_bot.load_log_file(sys.argv[2])
+        tolstoy.load_log_file(sys.argv[2])
     elif len(sys.argv):
-        markov_bot.load_text_file(sys.argv[2], sys.argv[3])
+        tolstoy.load_text_file(sys.argv[2], sys.argv[3])
 else:
-    conn.connect()
-    conn.join('#botwars')
-    try:
-        conn.enter_event_loop()
-    except:
-        pass
-
-markov_bot.save_data()
+    tolstoy.run(['#botwars'])

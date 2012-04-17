@@ -17,10 +17,10 @@ class LolBot(IRCBot):
 
     lifetime = 5
     repeat_score = 5
-    
+
     def __init__(self, *args, **kwargs):
         super(LolBot, self).__init__(*args, **kwargs)
-        
+
         self.message_count = 0
         self.last_urls = {}
         self.redis_conn = redis.Redis()
@@ -72,4 +72,5 @@ host = 'irc.freenode.net'
 port = 6667
 nick = 'walrus-whisker'
 
-run_bot(LolBot, host, port, nick, ['#lawrence-botwars'])
+hyneman = LolBot(host, port, nick)
+hyneman.run(['#lawrence-botwars'])

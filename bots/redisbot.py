@@ -3,7 +3,7 @@ import random
 import re
 import redis
 
-from irc import IRCBot, run_bot
+from irc import IRCBot
 
 
 class MarkovBot(IRCBot):
@@ -18,57 +18,57 @@ class MarkovBot(IRCBot):
     prefix = 'irc'
     separator = '\x01'
     stop_word = '\x02'
-    
+
     def __init__(self, *args, **kwargs):
         super(MarkovBot, self).__init__(*args, **kwargs)
-        
+
         self.redis_conn = redis.Redis()
-    
+
     def make_key(self, k):
         return '-'.join((self.prefix, k))
-    
+
     def sanitize_message(self, message):
         return re.sub('[\"\']', '', message.lower())
 
     def split_message(self, message):
         # split the incoming message into words, i.e. ['what', 'up', 'bro']
         words = message.split()
-        
+
         # if the message is any shorter, it won't lead anywhere
         if len(words) > self.chain_length:
-            
+
             # add some stop words onto the message
             # ['what', 'up', 'bro', '\x02']
             words.append(self.stop_word)
-            
+
             # len(words) == 4, so range(4-2) == range(2) == 0, 1, meaning
             # we return the following slices: [0:3], [1:4]
             # or ['what', 'up', 'bro'], ['up', 'bro', '\x02']
             for i in range(len(words) - self.chain_length):
                 yield words[i:i + self.chain_length + 1]
-    
+
     def generate_message(self, seed):
         key = seed
-        
+
         # keep a list of words we've seen
         gen_words = []
-        
+
         # only follow the chain so far, up to <max words>
         for i in xrange(self.max_words):
-        
+
             # split the key on the separator to extract the words -- the key
             # might look like "this\x01is" and split out into ['this', 'is']
             words = key.split(self.separator)
-            
+
             # add the word to the list of words in our generated message
             gen_words.append(words[0])
-            
+
             # get a new word that lives at this key -- if none are present we've
             # reached the end of the chain and can bail
             next_word = self.redis_conn.srandmember(self.make_key(key))
             if not next_word:
                 break
-            
+
             # create a new key combining the end of the old one and the next_word
             key = self.separator.join(words[1:] + [next_word])
 
@@ -79,13 +79,13 @@ class MarkovBot(IRCBot):
         say_something = self.is_ping(message) or (
             sender != self.conn.nick and random.random() < self.chattiness
         )
-        
+
         messages = []
-        
+
         # use a convenience method to strip out the "ping" portion of a message
         if self.is_ping(message):
             message = self.fix_ping(message)
-        
+
         if message.startswith('/'):
             return
 
@@ -94,10 +94,10 @@ class MarkovBot(IRCBot):
         for words in self.split_message(self.sanitize_message(message)):
             # grab everything but the last word
             key = self.separator.join(words[:-1])
-            
+
             # add the last word to the set
             self.redis_conn.sadd(self.make_key(key), words[-1])
-            
+
             # if we should say something, generate some messages based on what
             # was just said and select the longest, then add it to the list
             if say_something:
@@ -106,10 +106,10 @@ class MarkovBot(IRCBot):
                     generated = self.generate_message(seed=key)
                     if len(generated) > len(best_message):
                         best_message = generated
-                
+
                 if best_message:
                     messages.append(best_message)
-        
+
         if len(messages):
             return random.choice(messages)
 
@@ -123,4 +123,5 @@ host = 'irc.freenode.net'
 port = 6667
 nick = 'whatyousay'
 
-run_bot(MarkovBot, host, port, nick, ['#lawrence-botwars'])
+leo = MarkovBot(host, port, nick)
+leo.run(['#lawrence-botwars'])
