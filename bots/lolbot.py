@@ -1,9 +1,8 @@
 #!/usr/bin/python
-import random
 import re
 import redis
 
-from irc import IRCBot, run_bot
+from irc import IRCBot
 
 
 class LolBot(IRCBot):
