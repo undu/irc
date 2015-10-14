@@ -19,10 +19,10 @@ class IRCConnection(object):
     nick_re = re.compile('.*?Nickname is already in use')
     nick_change_re = re.compile(':(?P<old_nick>.*?)!\S+\s+?NICK\s+:\s*(?P<new_nick>[-\w]+)')
     ping_re = re.compile('^PING (?P<payload>.*)')
-    chanmsg_re = re.compile(':(?P<nick>.*?)!\S+\s+?PRIVMSG\s+#(?P<channel>[-\w]+)\s+:(?P<message>[^\n\r]+)')
+    chanmsg_re = re.compile(':(?P<nick>.*?)!\S+\s+?PRIVMSG\s+(?P<channel>#+[-\w]+)\s+:(?P<message>[^\n\r]+)')
     privmsg_re = re.compile(':(?P<nick>.*?)!~\S+\s+?PRIVMSG\s+[^#][^:]+:(?P<message>[^\n\r]+)')
-    part_re = re.compile(':(?P<nick>.*?)!\S+\s+?PART\s+#(?P<channel>[-\w]+)')
-    join_re = re.compile(':(?P<nick>.*?)!\S+\s+?JOIN\s+:\s*#(?P<channel>[-\w]+)')
+    part_re = re.compile(':(?P<nick>.*?)!\S+\s+?PART\s+(?P<channel>#+[-\w]+)')
+    join_re = re.compile(':(?P<nick>.*?)!\S+\s+?JOIN\s+.*?(?P<channel>#+[-\w]+)')
     quit_re = re.compile(':(?P<nick>.*?)!\S+\s+?QUIT\s+.*')
     registered_re = re.compile(':(?P<server>.*?)\s+(?:376|422)')
 
@@ -33,10 +33,11 @@ class IRCConnection(object):
         2: logging.DEBUG,
     }
 
-    def __init__(self, server, port, nick, logfile=None, verbosity=1, needs_registration=True):
+    def __init__(self, server, port, nick, password=None, logfile=None, verbosity=1, needs_registration=True):
         self.server = server
         self.port = port
         self.nick = self.base_nick = nick
+        self.password = password
 
         self.logfile = logfile
         self.verbosity = verbosity
@@ -84,14 +85,21 @@ class IRCConnection(object):
             self._sock.connect((self.server, self.port))
         except socket.error:
             self.logger.error('Unable to connect to %s on port %d' % (self.server, self.port), exc_info=1)
-            sys.exit(1)
+            return False
 
         self._sock_file = self._sock.makefile()
+        if self.password:
+            self.set_password()
         self.register_nick()
         self.register()
+        return True
 
     def close(self):
         self._sock.close()
+
+    def set_password(self):
+        self.logger.info('Setting password')
+        self.send('PASS %s' % self.password, True)
 
     def register_nick(self):
         self.logger.info('Registering nick %s' % self.nick)
@@ -102,14 +110,16 @@ class IRCConnection(object):
         self.send('USER %s %s bla :%s' % (self.nick, self.server, self.nick), True)
 
     def join(self, channel):
-        channel = channel.lstrip('#')
-        self.send('JOIN #%s' % channel)
-        self.logger.debug('joining #%s' % channel)
+        if not channel.startswith('#'):
+            channel = '#%s' % channel
+        self.send('JOIN %s' % channel)
+        self.logger.debug('joining %s' % channel)
 
     def part(self, channel):
-        channel = channel.lstrip('#')
-        self.send('PART #%s' % channel)
-        self.logger.debug('leaving #%s' % channel)
+        if not channel.startswith('#'):
+            channel = '#%s' % channel
+        self.send('PART %s' % channel)
+        self.logger.debug('leaving %s' % channel)
 
     def respond(self, message, channel=None, nick=None):
         """\
@@ -117,7 +127,9 @@ class IRCConnection(object):
         a single user
         """
         if channel:
-            self.send('PRIVMSG #%s :%s' % (channel.lstrip('#'), message))
+            if not channel.startswith('#'):
+                channel = '#%s' % channel
+            self.send('PRIVMSG %s :%s' % (channel, message))
         elif nick:
             self.send('PRIVMSG %s :%s' % (nick, message))
 
@@ -331,7 +343,6 @@ class IRCBot(object):
             except (KeyboardInterrupt, SystemExit):
                 self.exit_cleanup()
                 return
-
 
 class SimpleSerialize(object):
     """\
